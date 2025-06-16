@@ -1,0 +1,46 @@
+# Build directories
+build/
+debug/
+release/
+
+# CMake
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+
+# Object files
+*.o
+*.ko
+*.elf
+
+# Libraries
+*.a
+*.so
+*.so.*
+
+# Executables
+*.out
+test_client
+
+# Debug files
+*.su
+
+# Code Coverage
+*.gcov
+*.gcno
+*.gcda
+
+# Valgrind output
+*.memcheck
+
+# Temporary files
+*.tmp
+*.log
+
+# Dependency files
+*.d
+
+# Core dumps
+core
+core.*

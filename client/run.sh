@@ -97,15 +97,11 @@ run_client() {
         fi
     fi
 
-    # Check if server is available (optional check)
-    check_server "$ip" "$port"
-    echo ""
-    
-    # Run the client
+    # Run the client with correct argument format
     echo -e "${GREEN}Connecting to chat server...${NC}"
     echo -e "${YELLOW}Type '/help' for commands or '/quit' to exit${NC}"
     echo ""
-    ./build/client "$nickname" "$ip" "$port"
+    ./build/client "$nickname" --host "$ip" --port "$port"
 }
 
 # Function to generate a random nickname
@@ -144,10 +140,14 @@ case "$1" in
         run_client "$random_nick" "$2" "$3"
         ;;
     *)
-        # Always clean build before running
-        echo -e "${YELLOW}Ensuring fresh build...${NC}"
-        build_client || exit 1
-        echo ""
+        # Check if build is needed
+        if [ ! -f "build/client" ] || [ ! -d "build" ]; then
+            echo -e "${YELLOW}Client executable not found. Building...${NC}"
+            build_client || exit 1
+            echo ""
+        else
+            echo -e "${GREEN}Using existing build${NC}"
+        fi
         
         # Run the client with provided arguments
         run_client "$1" "$2" "$3"

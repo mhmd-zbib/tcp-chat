@@ -90,9 +90,9 @@ void *client_session_handler_thread(void *arg)
                 client_id);
         pthread_exit(NULL);
     }
-    printf("client_session_handler_thread: Starting handler for client %d\n", client_id);
+    printf("Starting handler for client %d\n", client_id);
     if (handshake_perform_server_side(session) < 0) {
-        printf("client_session_handler_thread: Handshake failed for client %d\n", client_id);
+        printf("Handshake failed for client %d\n", client_id);
         client_manager_remove_client(manager, client_id);
         pthread_exit(NULL);
     }

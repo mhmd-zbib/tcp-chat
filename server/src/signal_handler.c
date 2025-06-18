@@ -2,7 +2,7 @@
 #include <signal.h>
 #include <stdio.h>
 static server_t *g_server = NULL;
-static void signal_handler(int signal)
+static void      signal_handler(int signal)
 {
     printf("\n\nReceived signal %d. Shutting down server...\n", signal);
     if (g_server) {

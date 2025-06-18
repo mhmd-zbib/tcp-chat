@@ -21,6 +21,7 @@ int handshake_send_packet(int socket_fd, const handshake_packet_t *packet)
         fprintf(stderr, "handshake_send_packet: packet is NULL\n");
         return -1;
     }
+
     ssize_t bytes_sent = send(socket_fd, packet, sizeof(handshake_packet_t), MSG_NOSIGNAL);
     if (bytes_sent != sizeof(handshake_packet_t)) {
         if (bytes_sent < 0) {
@@ -31,8 +32,12 @@ int handshake_send_packet(int socket_fd, const handshake_packet_t *packet)
         }
         return -1;
     }
-    printf("handshake_send_packet: Sent %s packet (seq=%u)\n",
-           packet->type == HANDSHAKE_TYPE_SYN ? "SYN" : "ACK", packet->seq_num);
+
+    printf("handshake_send_packet: Sent %s packet (seq=%u, ack=%u)\n",
+           packet->type == HANDSHAKE_TYPE_SYN       ? "SYN"
+           : packet->type == HANDSHAKE_TYPE_SYN_ACK ? "SYN-ACK"
+                                                    : "ACK",
+           packet->seq_num, packet->ack_num);
     return 0;
 }
 int handshake_receive_packet(int socket_fd, handshake_packet_t *packet)
@@ -61,8 +66,12 @@ int handshake_receive_packet(int socket_fd, handshake_packet_t *packet)
         }
         return -1;
     }
-    printf("handshake_receive_packet: Received %s packet (seq=%u)\n",
-           packet->type == HANDSHAKE_TYPE_SYN ? "SYN" : "ACK", packet->seq_num);
+
+    printf("handshake_receive_packet: Received %s packet (seq=%u, ack=%u)\n",
+           packet->type == HANDSHAKE_TYPE_SYN       ? "SYN"
+           : packet->type == HANDSHAKE_TYPE_SYN_ACK ? "SYN-ACK"
+                                                    : "ACK",
+           packet->seq_num, packet->ack_num);
     return 0;
 }
 static int handshake_reset_socket_timeout(int socket_fd)
@@ -84,50 +93,77 @@ int handshake_perform_server_side(client_session_t *client)
         fprintf(stderr, "handshake_perform_server_side: client is NULL\n");
         return -1;
     }
-    printf("=== Starting Server-side 2-Way Handshake ===\n");
-    printf("handshake_perform_server_side: Handling handshake for client on socket %d\n",
-           client->socket_fd);
+
+    printf("Starting 3-way handshake for client on socket %d\n", client->socket_fd);
     client->handshake_state = HANDSHAKE_IDLE;
+
+    // Step 1: Receive SYN from client
     handshake_packet_t syn_packet = {0};
-    printf("handshake_perform_server_side: Step 1: Waiting for SYN from client...\n");
+    printf("Step 1: Waiting for SYN packet from client\n");
     if (handshake_receive_packet(client->socket_fd, &syn_packet) < 0) {
-        fprintf(stderr, "handshake_perform_server_side: Failed to receive SYN packet\n");
+        fprintf(stderr, "Handshake failed: Could not receive SYN packet\n");
         client->handshake_state = HANDSHAKE_FAILED;
         return -1;
     }
+
     if (syn_packet.type != HANDSHAKE_TYPE_SYN) {
-        fprintf(stderr,
-                "handshake_perform_server_side: Invalid packet type: expected SYN (%d), got %d\n",
-                HANDSHAKE_TYPE_SYN, syn_packet.type);
+        fprintf(stderr, "Handshake failed: Invalid packet type (expected SYN, got %d)\n",
+                syn_packet.type);
         client->handshake_state = HANDSHAKE_FAILED;
         return -1;
     }
-    client->sequence_number = syn_packet.seq_num;
-    client->handshake_state = HANDSHAKE_SYN_SENT;
+
+    // Store client's sequence number and set nickname
+    uint32_t client_seq     = syn_packet.seq_num;
+    client->handshake_state = HANDSHAKE_SYN_RECEIVED;
+
     if (strlen(syn_packet.nickname) > 0 && strlen(syn_packet.nickname) < MAX_NICKNAME_LEN) {
         client_session_set_nickname(client, syn_packet.nickname);
-        printf("handshake_perform_server_side: Step 1: Received SYN (seq=%u) with nickname '%s'\n",
-               syn_packet.seq_num, client->nickname);
-    } else {
-        printf(
-            "handshake_perform_server_side: Step 1: Received SYN (seq=%u) with default nickname\n",
-            syn_packet.seq_num);
     }
-    handshake_packet_t ack_packet = {0};
-    ack_packet.type               = HANDSHAKE_TYPE_ACK;
-    ack_packet.seq_num            = handshake_generate_sequence_number();
-    strncpy(ack_packet.nickname, "SERVER", MAX_NICKNAME_LEN - 1);
-    printf("handshake_perform_server_side: Step 2: Sending ACK (seq=%u)\n", ack_packet.seq_num);
-    if (handshake_send_packet(client->socket_fd, &ack_packet) < 0) {
-        fprintf(stderr, "handshake_perform_server_side: Failed to send ACK packet\n");
+
+    // Step 2: Send SYN-ACK to client
+    handshake_packet_t syn_ack_packet = {0};
+    syn_ack_packet.type               = HANDSHAKE_TYPE_SYN_ACK;
+    syn_ack_packet.seq_num            = handshake_generate_sequence_number();
+    syn_ack_packet.ack_num            = client_seq + 1; // Acknowledge client's SYN
+    strncpy(syn_ack_packet.nickname, "SERVER", MAX_NICKNAME_LEN - 1);
+
+    printf("Step 2: Sending SYN-ACK packet to client\n");
+    if (handshake_send_packet(client->socket_fd, &syn_ack_packet) < 0) {
+        fprintf(stderr, "Handshake failed: Could not send SYN-ACK packet\n");
         client->handshake_state = HANDSHAKE_FAILED;
         return -1;
     }
+
+    // Step 3: Receive ACK from client
+    handshake_packet_t ack_packet = {0};
+    printf("Step 3: Waiting for ACK packet from client\n");
+    if (handshake_receive_packet(client->socket_fd, &ack_packet) < 0) {
+        fprintf(stderr, "Handshake failed: Could not receive ACK packet\n");
+        client->handshake_state = HANDSHAKE_FAILED;
+        return -1;
+    }
+
+    if (ack_packet.type != HANDSHAKE_TYPE_ACK) {
+        fprintf(stderr, "Handshake failed: Invalid packet type (expected ACK, got %d)\n",
+                ack_packet.type);
+        client->handshake_state = HANDSHAKE_FAILED;
+        return -1;
+    }
+
+    // Verify ACK number matches our sequence + 1
+    if (ack_packet.ack_num != syn_ack_packet.seq_num + 1) {
+        fprintf(stderr, "Handshake failed: Invalid ACK number (expected %u, got %u)\n",
+                syn_ack_packet.seq_num + 1, ack_packet.ack_num);
+        client->handshake_state = HANDSHAKE_FAILED;
+        return -1;
+    }
+
+    // Handshake completed successfully
+    client->sequence_number = syn_ack_packet.seq_num;
     client->handshake_state = HANDSHAKE_ESTABLISHED;
     handshake_reset_socket_timeout(client->socket_fd);
-    printf("handshake_perform_server_side: Step 2: Sent ACK (seq=%u)\n", ack_packet.seq_num);
-    printf("=== 2-Way Handshake Completed Successfully ===\n");
-    printf("handshake_perform_server_side: Connection established with client '%s'\n",
-           client->nickname);
+
+    printf("3-way handshake completed successfully with client '%s'\n", client->nickname);
     return 0;
 }

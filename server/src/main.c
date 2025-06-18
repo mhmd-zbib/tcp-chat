@@ -37,7 +37,7 @@ int main(int argc, char *argv[])
     }
     printf("Server listening for connections...\n");
     server->is_running = 1;
-    int flags = fcntl(server->socket_fd, F_GETFL, 0);
+    int flags          = fcntl(server->socket_fd, F_GETFL, 0);
     fcntl(server->socket_fd, F_SETFL, flags | O_NONBLOCK);
     while (server->is_running) {
         server_accept_clients(server);

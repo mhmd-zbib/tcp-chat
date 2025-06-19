@@ -1,4 +1,5 @@
 #include "../include/cli_args.h"
+#include "../../utils/include/logger.h"
 #include "../include/client.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -13,7 +14,7 @@ cli_args_t parse_args(int argc, char *argv[])
     args.valid       = 0;
 
     if (argc < 2) {
-        fprintf(stderr, "Error: Nickname is required\n");
+        LOG_ERROR("Error: Nickname is required");
         return args;
     }
 
@@ -24,25 +25,25 @@ cli_args_t parse_args(int argc, char *argv[])
             if (i + 1 < argc) {
                 args.server_ip = argv[++i];
             } else {
-                fprintf(stderr, "Error: --host requires an IP address\n");
+                LOG_ERROR("Error: --host requires an IP address");
                 return args;
             }
         } else if (strcmp(argv[i], "-p") == 0 || strcmp(argv[i], "--port") == 0) {
             if (i + 1 < argc) {
                 args.server_port = atoi(argv[++i]);
                 if (args.server_port <= 0 || args.server_port > 65535) {
-                    fprintf(stderr, "Error: Invalid port number\n");
+                    LOG_ERROR("Error: Invalid port number");
                     return args;
                 }
             } else {
-                fprintf(stderr, "Error: --port requires a port number\n");
+                LOG_ERROR("Error: --port requires a port number");
                 return args;
             }
         } else if (strcmp(argv[i], "--help") == 0) {
             print_usage(argv[0]);
             return args;
         } else {
-            fprintf(stderr, "Error: Unknown argument '%s'\n", argv[i]);
+            LOG_ERROR("Error: Unknown argument '%s'", argv[i]);
             return args;
         }
     }
@@ -53,12 +54,12 @@ cli_args_t parse_args(int argc, char *argv[])
 
 void print_usage(const char *program_name)
 {
-    printf("Usage: %s <nickname> [options]\n", program_name);
-    printf("Options:\n");
-    printf("  -h, --host <ip>    Server IP address (default: %s)\n", DEFAULT_SERVER_IP);
-    printf("  -p, --port <port>  Server port (default: %d)\n", DEFAULT_SERVER_PORT);
-    printf("  --help             Show this help message\n");
-    printf("\nExample:\n");
-    printf("  %s Alice\n", program_name);
-    printf("  %s Bob --host 192.168.1.100 --port 9000\n", program_name);
+    LOG_INFO("Usage: %s <nickname> [options]", program_name);
+    LOG_INFO("Options:");
+    LOG_INFO("  -h, --host <ip>    Server IP address (default: %s)", DEFAULT_SERVER_IP);
+    LOG_INFO("  -p, --port <port>  Server port (default: %d)", DEFAULT_SERVER_PORT);
+    LOG_INFO("  --help             Show this help message");
+    LOG_INFO("Example:");
+    LOG_INFO("  %s Alice", program_name);
+    LOG_INFO("  %s Bob --host 192.168.1.100 --port 9000", program_name);
 }

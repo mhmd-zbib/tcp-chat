@@ -1,12 +1,23 @@
 #include "../include/server.h"
+#include "../../utils/include/logger.h"
 #include "../include/client_manager.h"
 #include "../include/client_session.h"
 #include "../include/types.h"
+#include <arpa/inet.h>
+#include <errno.h>
+#include <fcntl.h> // for fcntl
+#include <netinet/in.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/socket.h>
+#include <time.h> // for nanosleep
+#include <unistd.h>
+
 server_t *server_create(const char *ip, int port)
 {
     server_t *server = malloc(sizeof(server_t));
     if (!server) {
-        fprintf(stderr, "Failed to allocate memory for server\n");
+        LOG_FATAL("Failed to allocate memory for server");
         return NULL;
     }
     server->port       = port;
@@ -16,72 +27,143 @@ server_t *server_create(const char *ip, int port)
     client_manager_initialize(&server->client_manager);
     server->socket_fd = socket(AF_INET, SOCK_STREAM, 0);
     if (server->socket_fd == -1) {
-        fprintf(stderr, "Socket creation failed: %s\n", strerror(errno));
+        LOG_ERRNO("Socket creation failed");
         free(server);
         return NULL;
     }
+
+    // Set socket options
     int opt = 1;
+    // Enable address reuse
     if (setsockopt(server->socket_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0) {
-        fprintf(stderr, "Failed to set socket options: %s\n", strerror(errno));
+        LOG_WARN("Failed to set SO_REUSEADDR option: %s", strerror(errno));
         close(server->socket_fd);
         free(server);
         return NULL;
+    }
+
+    // Ensure socket is in blocking mode
+    int flags = fcntl(server->socket_fd, F_GETFL, 0);
+    if (flags == -1) {
+        LOG_ERRNO("Failed to get socket flags");
+        close(server->socket_fd);
+        free(server);
+        return NULL;
+    }
+
+    // Remove O_NONBLOCK flag if it's set
+    if (flags & O_NONBLOCK) {
+        LOG_INFO("Setting socket to blocking mode");
+        if (fcntl(server->socket_fd, F_SETFL, flags & ~O_NONBLOCK) == -1) {
+            LOG_ERRNO("Failed to set socket to blocking mode");
+            close(server->socket_fd);
+            free(server);
+            return NULL;
+        }
     }
     memset(&server->addr, 0, sizeof(server->addr));
     server->addr.sin_family = AF_INET;
     server->addr.sin_port   = htons(port);
     if (inet_pton(AF_INET, ip, &server->addr.sin_addr) <= 0) {
-        fprintf(stderr, "Invalid IP address: %s\n", ip);
+        LOG_ERROR("Invalid IP address: %s", ip);
         close(server->socket_fd);
         free(server);
         return NULL;
     }
-    printf("TCP socket created successfully (fd: %d)\n", server->socket_fd);
+    LOG_SERVER("TCP socket created successfully (fd: %d)", server->socket_fd);
     return server;
 }
 int server_bind(server_t *server)
 {
     if (!server) {
-        fprintf(stderr, "Server is NULL\n");
+        LOG_ERROR("Server is NULL");
         return -1;
     }
     if (bind(server->socket_fd, (struct sockaddr *)&server->addr, sizeof(server->addr)) < 0) {
-        fprintf(stderr, "Bind failed: %s\n", strerror(errno));
+        LOG_ERRNO("Bind failed");
         return -1;
     }
-    printf("Socket successfully bound to %s:%d\n", server->ip, server->port);
+    LOG_SERVER("Socket successfully bound to %s:%d", server->ip, server->port);
     return 0;
 }
 int server_accept_clients(server_t *server)
 {
-    struct sockaddr_in client_addr;
-    socklen_t          client_len = sizeof(client_addr);
-    int client_socket = accept(server->socket_fd, (struct sockaddr *)&client_addr, &client_len);
-    if (client_socket < 0) {
-        if (errno != EWOULDBLOCK && errno != EAGAIN) {
-            fprintf(stderr, "Accept failed: %s\n", strerror(errno));
+    if (!server) {
+        LOG_ERROR("server_accept_clients: server is NULL");
+        return -1;
+    }
+
+    server->is_running = 1;
+    LOG_SERVER("Server is running and accepting connections");
+    LOG_CONNECTION("Waiting for incoming connections...");
+
+    while (server->is_running) {
+        struct sockaddr_in client_addr;
+        socklen_t          client_addr_len = sizeof(client_addr);
+
+        // accept() will block until a connection is received
+        int client_socket =
+            accept(server->socket_fd, (struct sockaddr *)&client_addr, &client_addr_len);
+
+        if (client_socket < 0) {
+            if (errno == EINTR) {
+                // Interrupted by signal, check if we're still supposed to run
+                if (!server->is_running) {
+                    LOG_INFO("Server shutdown requested, stopping accept loop");
+                    break;
+                }
+                continue;
+            }
+
+            // Handle expected non-blocking mode errors
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                // These errors are normal in non-blocking mode - just sleep a bit
+                struct timespec ts = {0, 100000000}; // 100ms
+                nanosleep(&ts, NULL);
+                continue;
+            }
+
+            // For other unexpected errors, log and sleep to avoid flooding logs
+            LOG_ERRNO("Accept failed");
+            struct timespec ts = {0, 500000000}; // 500ms
+            nanosleep(&ts, NULL);
+            LOG_CONNECTION("Waiting for incoming connections..."); // Re-log after error
+            continue;
         }
-        return -1;
+
+        LOG_CONNECTION("New client connection from %s:%d", inet_ntoa(client_addr.sin_addr),
+                       ntohs(client_addr.sin_port));
+
+        // Add client to the manager
+        int client_id =
+            client_manager_add_new_client(&server->client_manager, client_socket, client_addr);
+        if (client_id < 0) {
+            LOG_ERROR("Failed to add client to manager - closing connection");
+            close(client_socket);
+            continue;
+        }
+
+        // Start a thread for the client session
+        client_session_t *session = client_manager_get_session(&server->client_manager, client_id);
+
+        // Create arguments for the handler thread
+        void *args                   = malloc(sizeof(client_manager_t *) + sizeof(int));
+        *((client_manager_t **)args) = &server->client_manager;
+        *((int *)((client_manager_t **)args + 1)) = client_id;
+
+        if (pthread_create(&session->thread, NULL, client_session_handler_thread, args) != 0) {
+            LOG_ERROR("Failed to create thread for client: %s", strerror(errno));
+            client_manager_remove_client(&server->client_manager, client_id);
+            LOG_CONNECTION("Waiting for incoming connections..."); // Re-log after error
+            continue;
+        }
+
+        LOG_CONNECTION("Started session thread for client %d", client_id);
+        LOG_CONNECTION("Waiting for incoming connections..."); // Ready for next connection
     }
-    int client_id =
-        client_manager_add_new_client(&server->client_manager, client_socket, client_addr);
-    if (client_id < 0) {
-        fprintf(stderr, "Failed to add client - server full\n");
-        close(client_socket);
-        return -1;
-    }
-    client_handler_args_t *args = malloc(sizeof(client_handler_args_t));
-    args->manager               = &server->client_manager;
-    args->client_id             = client_id;
-    client_session_t *client = client_manager_get_session(&server->client_manager, client_id);
-    if (pthread_create(&client->thread, NULL, client_session_handler_thread, args) != 0) {
-        fprintf(stderr, "Failed to create thread for client %d\n", client_id);
-        client_manager_remove_client(&server->client_manager, client_id);
-        free(args);
-        return -1;
-    }
-    pthread_detach(client->thread);
-    return client_id;
+
+    LOG_SERVER("Server stopped accepting connections");
+    return 0;
 }
 void server_destroy(server_t *server)
 {
@@ -89,7 +171,7 @@ void server_destroy(server_t *server)
         client_manager_cleanup(&server->client_manager);
         if (server->socket_fd >= 0) {
             close(server->socket_fd);
-            printf("Socket closed\n");
+            LOG_INFO("Socket closed");
         }
         free(server);
     }
@@ -97,13 +179,13 @@ void server_destroy(server_t *server)
 void server_print_info(const server_t *server)
 {
     if (!server) {
-        printf("Server: NULL\n");
+        LOG_INFO("Server: NULL");
         return;
     }
-    printf("=== Server Info ===\n");
-    printf("Socket FD: %d\n", server->socket_fd);
-    printf("IP Address: %s\n", server->ip);
-    printf("Port: %d\n", server->port);
-    printf("Status: %s\n", server->is_running ? "Running" : "Stopped");
-    printf("==================\n");
+    LOG_INFO("=== Server Info ===");
+    LOG_INFO("Socket FD: %d", server->socket_fd);
+    LOG_INFO("IP Address: %s", server->ip);
+    LOG_INFO("Port: %d", server->port);
+    LOG_INFO("Status: %s", server->is_running ? "Running" : "Stopped");
+    LOG_INFO("==================");
 }

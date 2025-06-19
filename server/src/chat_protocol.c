@@ -1,4 +1,5 @@
 #include "../include/chat_protocol.h"
+#include "../../utils/include/logger.h"
 #include "../include/client_manager.h"
 #include "../include/client_session.h"
 #include "../include/types.h"
@@ -13,8 +14,8 @@ static int chat_protocol_send_message_to_client(client_session_t *session, const
         return -1;
     }
     if (send(session->socket_fd, message, strlen(message), MSG_NOSIGNAL) < 0) {
-        printf("chat_protocol_send_message_to_client: Failed to send message to client '%s': %s\n",
-               session->nickname, strerror(errno));
+        LOG_ERROR("chat_protocol_send_message_to_client: Failed to send message to client '%s': %s",
+                  session->nickname, strerror(errno));
         return -1;
     }
     return 0;
@@ -25,8 +26,8 @@ static int chat_protocol_handle_command(client_manager_t *manager, client_sessio
     if (!manager || !session || !command) {
         return -1;
     }
-    printf("chat_protocol_handle_command: Processing command '%s' from client '%s'\n", command,
-           session->nickname);
+    LOG_DEBUG("chat_protocol_handle_command: Processing command '%s' from client '%s'", command,
+              session->nickname);
     if (strncmp(command, "/nick ", 6) == 0) {
         const char *new_nickname = command + 6;
         return chat_protocol_handle_nickname_change(manager, session, new_nickname);
@@ -42,7 +43,7 @@ static int chat_protocol_handle_command(client_manager_t *manager, client_sessio
         chat_protocol_send_message_to_client(session, help_msg);
         return 0;
     } else if (strncmp(command, "/quit", 5) == 0) {
-        printf("chat_protocol_handle_command: Client '%s' requested to quit\n", session->nickname);
+        LOG_CLIENT("Client '%s' requested to quit", session->nickname);
         return -1;
     } else {
         const char *unknown_cmd = "Unknown command. Type /help for available commands.\n";
@@ -69,8 +70,8 @@ int chat_protocol_handle_message(client_manager_t *manager, client_session_t *se
     char formatted_message[BUFFER_SIZE + MAX_NICKNAME_LEN + 10];
     snprintf(formatted_message, sizeof(formatted_message), "%s: %s\n", session->nickname,
              clean_message);
-    printf("chat_protocol_handle_message: Broadcasting message from '%s': %s", session->nickname,
-           formatted_message);
+    LOG_DEBUG("chat_protocol_handle_message: Broadcasting message from '%s': %s", session->nickname,
+              formatted_message);
     client_manager_broadcast_message(manager, formatted_message, client_id);
     return 0;
 }
@@ -100,7 +101,7 @@ int chat_protocol_handle_nickname_change(client_manager_t *manager, client_sessi
     char announcement[BUFFER_SIZE];
     snprintf(announcement, BUFFER_SIZE, "*** %s is now known as %s ***\n", old_nickname,
              session->nickname);
-    printf("chat_protocol_handle_nickname_change: %s", announcement);
+    LOG_INFO("chat_protocol_handle_nickname_change: %s", announcement);
     client_manager_broadcast_message(manager, announcement, -1);
     client_manager_broadcast_user_list(manager);
     return 0;
@@ -116,12 +117,12 @@ void chat_protocol_send_welcome_message(client_session_t *session)
                               "Type your messages to chat with other users.\n"
                               "=====================================\n";
     if (chat_protocol_send_message_to_client(session, welcome_msg) < 0) {
-        printf(
-            "chat_protocol_send_welcome_message: Failed to send welcome message to client '%s'\n",
+        LOG_ERROR(
+            "chat_protocol_send_welcome_message: Failed to send welcome message to client '%s'",
             session->nickname);
     } else {
-        printf("chat_protocol_send_welcome_message: Sent welcome message to client '%s'\n",
-               session->nickname);
+        LOG_INFO("chat_protocol_send_welcome_message: Sent welcome message to client '%s'",
+                 session->nickname);
     }
 }
 void chat_protocol_announce_user_joined(client_manager_t *manager, client_session_t *session,
@@ -132,7 +133,7 @@ void chat_protocol_announce_user_joined(client_manager_t *manager, client_sessio
     }
     char announcement[BUFFER_SIZE];
     snprintf(announcement, BUFFER_SIZE, "*** %s joined the chat ***\n", session->nickname);
-    printf("chat_protocol_announce_user_joined: %s", announcement);
+    LOG_INFO("chat_protocol_announce_user_joined: %s", announcement);
     client_manager_broadcast_message(manager, announcement, client_id);
     client_manager_broadcast_user_list(manager);
 }

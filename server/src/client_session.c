@@ -1,4 +1,5 @@
 #include "../include/client_session.h"
+#include "../../utils/include/logger.h"
 #include "../include/chat_protocol.h"
 #include "../include/client_manager.h"
 #include "../include/handshake_protocol.h"
@@ -11,7 +12,7 @@
 void client_session_initialize(client_session_t *session, int socket_fd, struct sockaddr_in addr)
 {
     if (!session) {
-        fprintf(stderr, "client_session_initialize: session is NULL\n");
+        LOG_ERROR("client_session_initialize: session is NULL");
         return;
     }
     session->socket_fd       = socket_fd;
@@ -20,7 +21,7 @@ void client_session_initialize(client_session_t *session, int socket_fd, struct 
     session->handshake_state = HANDSHAKE_IDLE;
     session->sequence_number = 0;
     snprintf(session->nickname, MAX_NICKNAME_LEN, "User%d", socket_fd);
-    printf("client_session_initialize: Initialized session for socket %d\n", socket_fd);
+    LOG_CONNECTION("client_session_initialize: Initialized session for socket %d", socket_fd);
 }
 void client_session_cleanup(client_session_t *session)
 {
@@ -29,8 +30,8 @@ void client_session_cleanup(client_session_t *session)
     }
     if (session->socket_fd >= 0) {
         close(session->socket_fd);
-        printf("client_session_cleanup: Closed socket %d for client '%s'\n", session->socket_fd,
-               session->nickname);
+        LOG_CONNECTION("client_session_cleanup: Closed socket %d for client '%s'",
+                       session->socket_fd, session->nickname);
     }
     session->socket_fd       = -1;
     session->active          = 0;
@@ -41,15 +42,15 @@ void client_session_cleanup(client_session_t *session)
 void client_session_set_nickname(client_session_t *session, const char *nickname)
 {
     if (!session || !nickname) {
-        fprintf(stderr, "client_session_set_nickname: Invalid parameters\n");
+        LOG_ERROR("client_session_set_nickname: Invalid parameters");
         return;
     }
     char old_nickname[MAX_NICKNAME_LEN];
     strncpy(old_nickname, session->nickname, MAX_NICKNAME_LEN - 1);
     strncpy(session->nickname, nickname, MAX_NICKNAME_LEN - 1);
     session->nickname[MAX_NICKNAME_LEN - 1] = '\0';
-    printf("client_session_set_nickname: Changed nickname from '%s' to '%s'\n", old_nickname,
-           session->nickname);
+    LOG_INFO("client_session_set_nickname: Changed nickname from '%s' to '%s'", old_nickname,
+             session->nickname);
 }
 int client_session_is_active(const client_session_t *session)
 {
@@ -64,10 +65,11 @@ static int client_session_receive_message(client_session_t *session, char *buffe
     int bytes_received = recv(session->socket_fd, buffer, buffer_size - 1, 0);
     if (bytes_received <= 0) {
         if (bytes_received == 0) {
-            printf("client_session_receive_message: Client '%s' disconnected\n", session->nickname);
+            LOG_CONNECTION("client_session_receive_message: Client '%s' disconnected",
+                           session->nickname);
         } else {
-            printf("client_session_receive_message: Error receiving from client '%s': %s\n",
-                   session->nickname, strerror(errno));
+            LOG_ERROR("client_session_receive_message: Error receiving from client '%s': %s",
+                      session->nickname, strerror(errno));
         }
         return -1;
     }
@@ -78,7 +80,7 @@ void *client_session_handler_thread(void *arg)
 {
     client_handler_args_t *args = (client_handler_args_t *)arg;
     if (!args) {
-        fprintf(stderr, "client_session_handler_thread: args is NULL\n");
+        LOG_ERROR("client_session_handler_thread: args is NULL");
         pthread_exit(NULL);
     }
     client_manager_t *manager   = args->manager;
@@ -86,13 +88,12 @@ void *client_session_handler_thread(void *arg)
     free(args);
     client_session_t *session = client_manager_get_session(manager, client_id);
     if (!session) {
-        fprintf(stderr, "client_session_handler_thread: Failed to get session for client %d\n",
-                client_id);
+        LOG_ERROR("client_session_handler_thread: Failed to get session for client %d", client_id);
         pthread_exit(NULL);
     }
-    printf("Starting handler for client %d\n", client_id);
+    LOG_CONNECTION("Starting handler for client %d", client_id);
     if (handshake_perform_server_side(session) < 0) {
-        printf("Handshake failed for client %d\n", client_id);
+        LOG_WARN("Handshake failed for client %d", client_id);
         client_manager_remove_client(manager, client_id);
         pthread_exit(NULL);
     }
@@ -105,12 +106,12 @@ void *client_session_handler_thread(void *arg)
             break;
         }
         if (chat_protocol_handle_message(manager, session, buffer, client_id) < 0) {
-            printf("client_session_handler_thread: Error handling message from client %d\n",
-                   client_id);
+            LOG_ERROR("client_session_handler_thread: Error handling message from client %d",
+                      client_id);
             break;
         }
     }
-    printf("client_session_handler_thread: Ending handler for client %d\n", client_id);
+    LOG_CONNECTION("client_session_handler_thread: Ending handler for client %d", client_id);
     client_manager_remove_client(manager, client_id);
     pthread_exit(NULL);
 }

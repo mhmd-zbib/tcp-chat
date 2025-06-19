@@ -1,5 +1,6 @@
 #include "../include/client.h"
 #include "../include/handshake_protocol.h"
+#include "../../utils/include/logger.h"
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -10,13 +11,13 @@
 client_t *client_create(const char *server_ip, int server_port, const char *nickname)
 {
     if (!server_ip || !nickname) {
-        fprintf(stderr, "client_create: Invalid arguments\n");
+        LOG_ERROR("client_create: Invalid arguments");
         return NULL;
     }
 
     client_t *client = malloc(sizeof(client_t));
     if (!client) {
-        fprintf(stderr, "client_create: Failed to allocate memory\n");
+        LOG_ERROR("client_create: Failed to allocate memory");
         return NULL;
     }
 
@@ -33,12 +34,12 @@ client_t *client_create(const char *server_ip, int server_port, const char *nick
     client->server_addr.sin_port   = htons(server_port);
 
     if (inet_pton(AF_INET, server_ip, &client->server_addr.sin_addr) <= 0) {
-        fprintf(stderr, "client_create: Invalid server IP address: %s\n", server_ip);
+        LOG_ERROR("client_create: Invalid server IP address: %s", server_ip);
         free(client);
         return NULL;
     }
 
-    printf("Client created for server %s:%d with nickname '%s'\n", server_ip, server_port,
+    LOG_INFO("Client created for server %s:%d with nickname '%s'", server_ip, server_port,
            nickname);
 
     return client;
@@ -47,51 +48,50 @@ client_t *client_create(const char *server_ip, int server_port, const char *nick
 int client_connect_to_server(client_t *client)
 {
     if (!client) {
-        fprintf(stderr, "client_connect_to_server: client is NULL\n");
+        LOG_ERROR("client_connect_to_server: client is NULL");
         return -1;
     }
 
     if (client->connected) {
-        printf("client_connect_to_server: Already connected\n");
+        LOG_INFO("client_connect_to_server: Already connected");
         return 0;
     }
 
     client->socket_fd = socket(AF_INET, SOCK_STREAM, 0);
     if (client->socket_fd < 0) {
-        fprintf(stderr, "client_connect_to_server: Failed to create socket: %s\n", strerror(errno));
+        LOG_ERRNO("client_connect_to_server: Failed to create socket");
         return -1;
     }
 
     int opt = 1;
     if (setsockopt(client->socket_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0) {
-        fprintf(stderr, "client_connect_to_server: Warning: Failed to set SO_REUSEADDR: %s\n",
+        LOG_WARN("client_connect_to_server: Failed to set SO_REUSEADDR: %s",
                 strerror(errno));
     }
 
-    printf("Connecting to server %s:%d...\n", client->server_ip, client->server_port);
+    LOG_CONNECTION("Connecting to server %s:%d...", client->server_ip, client->server_port);
 
     if (connect(client->socket_fd, (struct sockaddr *)&client->server_addr,
                 sizeof(client->server_addr)) < 0) {
-        fprintf(stderr, "client_connect_to_server: Failed to connect to server: %s\n",
-                strerror(errno));
+        LOG_ERRNO("client_connect_to_server: Failed to connect to server");
         close(client->socket_fd);
         client->socket_fd = -1;
         return -1;
     }
 
-    printf("TCP connection established. Starting handshake...\n");
+    LOG_CONNECTION("TCP connection established. Starting handshake...");
 
     usleep(100000);
 
     if (handshake_perform_client_side(client->socket_fd, client->nickname) < 0) {
-        fprintf(stderr, "client_connect_to_server: Handshake failed\n");
+        LOG_ERROR("client_connect_to_server: Handshake failed");
         close(client->socket_fd);
         client->socket_fd = -1;
         return -1;
     }
 
     client->connected = 1;
-    printf("Successfully connected and authenticated with server!\n");
+    LOG_CONNECTION("Successfully connected and authenticated with server!");
 
     return 0;
 }
@@ -103,13 +103,13 @@ void client_disconnect(client_t *client)
     }
 
     if (client->socket_fd >= 0) {
-        printf("Disconnecting from server...\n");
+        LOG_CONNECTION("Disconnecting from server...");
         close(client->socket_fd);
         client->socket_fd = -1;
     }
 
     client->connected = 0;
-    printf("Disconnected from server\n");
+    LOG_CONNECTION("Disconnected from server");
 }
 
 void client_destroy(client_t *client)
@@ -120,4 +120,5 @@ void client_destroy(client_t *client)
 
     client_disconnect(client);
     free(client);
+    LOG_INFO("Client resources released");
 }

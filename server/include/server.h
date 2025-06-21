@@ -1,6 +1,7 @@
 #ifndef SERVER_H
 #define SERVER_H
 #include "client_manager.h"
+#include "room_manager.h"
 #include "types.h"
 #include <arpa/inet.h>
 #include <errno.h>
@@ -20,6 +21,7 @@ typedef struct {
     char               ip[INET_ADDRSTRLEN];
     int                is_running;
     client_manager_t   client_manager;
+    room_manager_t     room_manager;
 } server_t;
 server_t *server_create(const char *ip, int port);
 int       server_bind(server_t *server);

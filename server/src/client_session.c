@@ -20,6 +20,8 @@ void client_session_initialize(client_session_t *session, int socket_fd, struct 
     session->active          = 1;
     session->handshake_state = HANDSHAKE_IDLE;
     session->sequence_number = 0;
+    session->state           = CLIENT_STATE_CONNECTED;
+    memset(session->current_room_id, 0, sizeof(session->current_room_id));
     snprintf(session->nickname, MAX_NICKNAME_LEN, "User%d", socket_fd);
     LOG_CONNECTION("client_session_initialize: Initialized session for socket %d", socket_fd);
 }
@@ -37,7 +39,9 @@ void client_session_cleanup(client_session_t *session)
     session->active          = 0;
     session->handshake_state = HANDSHAKE_FAILED;
     session->sequence_number = 0;
+    session->state           = CLIENT_STATE_CONNECTED;
     memset(session->nickname, 0, MAX_NICKNAME_LEN);
+    memset(session->current_room_id, 0, sizeof(session->current_room_id));
 }
 void client_session_set_nickname(client_session_t *session, const char *nickname)
 {

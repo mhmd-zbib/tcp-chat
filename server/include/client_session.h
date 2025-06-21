@@ -15,6 +15,8 @@ typedef struct client_session_s {
     int                active;
     handshake_state_t  handshake_state;
     uint32_t           sequence_number;
+    client_state_t     state;
+    char               current_room_id[ROOM_ID_LENGTH + 1];
 } client_session_t;
 void  client_session_initialize(client_session_t *session, int socket_fd, struct sockaddr_in addr);
 void  client_session_cleanup(client_session_t *session);

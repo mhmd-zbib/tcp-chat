@@ -2,6 +2,7 @@
 #include "../../utils/include/logger.h"
 #include "../include/client_manager.h"
 #include "../include/client_session.h"
+#include "../include/room_manager.h"
 #include "../include/types.h"
 #include <arpa/inet.h>
 #include <errno.h>
@@ -12,6 +13,10 @@
 #include <sys/socket.h>
 #include <time.h> // for nanosleep
 #include <unistd.h>
+
+// Global instances for access from other modules
+room_manager_t   *g_room_manager   = NULL;
+client_manager_t *g_client_manager = NULL;
 
 server_t *server_create(const char *ip, int port)
 {
@@ -24,7 +29,15 @@ server_t *server_create(const char *ip, int port)
     server->is_running = 0;
     strncpy(server->ip, ip, INET_ADDRSTRLEN - 1);
     server->ip[INET_ADDRSTRLEN - 1] = '\0';
+
+    // Initialize managers
     client_manager_initialize(&server->client_manager);
+    room_manager_initialize(&server->room_manager);
+
+    // Set global references
+    g_client_manager = &server->client_manager;
+    g_room_manager   = &server->room_manager;
+
     server->socket_fd = socket(AF_INET, SOCK_STREAM, 0);
     if (server->socket_fd == -1) {
         LOG_ERRNO("Socket creation failed");
@@ -169,6 +182,12 @@ void server_destroy(server_t *server)
 {
     if (server) {
         client_manager_cleanup(&server->client_manager);
+        room_manager_cleanup(&server->room_manager);
+
+        // Clear global references
+        g_client_manager = NULL;
+        g_room_manager   = NULL;
+
         if (server->socket_fd >= 0) {
             close(server->socket_fd);
             LOG_INFO("Socket closed");

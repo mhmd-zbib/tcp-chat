@@ -1,6 +1,7 @@
 #ifndef CLIENT_H
 #define CLIENT_H
 
+#include "security_foundation.h"
 #include "types.h"
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -9,12 +10,13 @@
 #define DEFAULT_SERVER_PORT 8080
 
 typedef struct {
-    int                socket_fd;
-    struct sockaddr_in server_addr;
-    char               server_ip[INET_ADDRSTRLEN];
-    int                server_port;
-    char               nickname[MAX_NICKNAME_LEN];
-    int                connected;
+    int                 socket_fd;
+    struct sockaddr_in  server_addr;
+    char                server_ip[INET_ADDRSTRLEN];
+    int                 server_port;
+    char                nickname[MAX_NICKNAME_LEN];
+    int                 connected;
+    security_context_t *security_ctx; // Phase 1: Security foundation
 } client_t;
 
 client_t *client_create(const char *server_ip, int server_port, const char *nickname);

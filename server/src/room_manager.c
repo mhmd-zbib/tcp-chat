@@ -71,7 +71,6 @@ char *room_manager_create_room(room_manager_t *manager, const char *room_name,
         return NULL;
     }
 
-    // Find an available room slot
     room_t *room = NULL;
     for (int i = 0; i < MAX_ROOMS; i++) {
         if (!manager->rooms[i].is_active) {
@@ -94,7 +93,6 @@ char *room_manager_create_room(room_manager_t *manager, const char *room_name,
         return NULL;
     }
 
-    // Initialize the room
     room_initialize(room, room_id, room_name);
     room_add_client(room, creator_client_id);
     manager->room_count++;
@@ -343,21 +341,18 @@ int room_add_client(room_t *room, int client_id)
 
     pthread_mutex_lock(&room->mutex);
 
-    // Check if client is already in room
     if (room_has_client(room, client_id)) {
         LOG_WARN("room_add_client: Client %d already in room", client_id);
         pthread_mutex_unlock(&room->mutex);
         return -1;
     }
 
-    // Check if room is full
     if (room->client_count >= MAX_CLIENTS_PER_ROOM) {
         LOG_WARN("room_add_client: Room is full");
         pthread_mutex_unlock(&room->mutex);
         return -1;
     }
 
-    // Find empty slot
     for (int i = 0; i < MAX_CLIENTS_PER_ROOM; i++) {
         if (room->client_ids[i] == -1) {
             room->client_ids[i] = client_id;

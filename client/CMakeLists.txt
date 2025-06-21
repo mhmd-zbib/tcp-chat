@@ -11,8 +11,8 @@ file(GLOB_RECURSE CLIENT_HEADERS "src/*.h")
 # Create the client executable
 add_executable(tcp-chat-client ${CLIENT_SOURCES})
 
-# Link pthread library and utils library
-target_link_libraries(tcp-chat-client pthread tcp-chat-utils)
+# Link pthread library, math library, and utils library
+target_link_libraries(tcp-chat-client pthread m tcp-chat-utils)
 
 # Include directories
 target_include_directories(tcp-chat-client PRIVATE src include ../utils/include)

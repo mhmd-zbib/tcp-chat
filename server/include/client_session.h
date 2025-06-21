@@ -1,6 +1,7 @@
 #ifndef CLIENT_SESSION_H
 #define CLIENT_SESSION_H
 #include "handshake_protocol.h"
+#include "security_foundation.h"
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <pthread.h>
@@ -17,6 +18,8 @@ typedef struct client_session_s {
     uint32_t           sequence_number;
     client_state_t     state;
     char               current_room_id[ROOM_ID_LENGTH + 1];
+    int                client_id;          // Phase 1: Client ID for security context
+    bool               security_validated; // Phase 1: Security validation status
 } client_session_t;
 void  client_session_initialize(client_session_t *session, int socket_fd, struct sockaddr_in addr);
 void  client_session_cleanup(client_session_t *session);

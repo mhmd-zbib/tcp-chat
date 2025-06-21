@@ -86,7 +86,6 @@ int chat_protocol_handle_message(client_manager_t *manager, client_session_t *se
         return chat_protocol_handle_command(manager, session, clean_message, client_id);
     }
 
-    // Check if client is in a room
     if (session->state != CLIENT_STATE_IN_ROOM || strlen(session->current_room_id) == 0) {
         const char *error_msg =
             "You must join a room before sending messages. Use /create <name> or /join <room_id>\n";
@@ -145,7 +144,13 @@ void chat_protocol_send_welcome_message(client_session_t *session)
                               "You are now connected to the chat room.\n"
                               "Type /help for available commands.\n"
                               "Type your messages to chat with other users.\n"
-                              "=====================================\n";
+                              "=====================================\n\n"
+                              "=== Room Selection Required ===\n"
+                              "Please choose an option:\n"
+                              "  /create <room_name> - Create a new room\n"
+                              "  /join <room_id>     - Join an existing room\n"
+                              "  /rooms              - List available rooms\n"
+                              "===============================\n";
     if (chat_protocol_send_message_to_client(session, welcome_msg) < 0) {
         LOG_ERROR(
             "chat_protocol_send_welcome_message: Failed to send welcome message to client '%s'",
@@ -162,21 +167,14 @@ void chat_protocol_announce_user_joined(client_manager_t *manager, client_sessio
         return;
     }
 
-    // Set client to lobby state after joining
     session->state = CLIENT_STATE_IN_LOBBY;
 
     char announcement[BUFFER_SIZE];
     snprintf(announcement, BUFFER_SIZE, "%s connected\n", session->nickname);
     LOG_INFO("chat_protocol_announce_user_joined: %s", announcement);
 
-    // Send welcome with room instructions
-    const char *room_instructions = "\n=== Room Selection Required ===\n"
-                                    "Please choose an option:\n"
-                                    "  /create <room_name> - Create a new room\n"
-                                    "  /join <room_id>     - Join an existing room\n"
-                                    "  /rooms              - List available rooms\n"
-                                    "===============================\n";
-    chat_protocol_send_message_to_client(session, room_instructions);
+    // Room instructions are now sent as part of the welcome message
+    // No need to send them again here
 }
 
 // Room command handlers following FILENAME_FUNCTIONNAME pattern
@@ -188,7 +186,6 @@ int chat_protocol_handle_create_room(client_manager_t *manager, client_session_t
         return -1;
     }
 
-    // Validate room name
     if (strlen(room_name) == 0 || strlen(room_name) >= MAX_ROOM_NAME) {
         const char *error_msg = "Invalid room name. Must be 1-63 characters.\n";
         chat_protocol_send_message_to_client(session, error_msg);
@@ -235,7 +232,6 @@ int chat_protocol_handle_join_room(client_manager_t *manager, client_session_t *
         return -1;
     }
 
-    // Validate room ID
     if (strlen(room_id) != ROOM_ID_LENGTH) {
         const char *error_msg = "Invalid room ID format.\n";
         chat_protocol_send_message_to_client(session, error_msg);

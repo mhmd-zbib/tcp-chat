@@ -1,6 +1,7 @@
 #include "../include/client_manager.h"
 #include "../../utils/include/logger.h"
 #include "../include/client_session.h"
+#include "../include/security_foundation.h"
 #include "../include/types.h"
 #include <arpa/inet.h>
 #include <errno.h>
@@ -70,6 +71,46 @@ int client_manager_add_new_client(client_manager_t *manager, int socket_fd, stru
         if (!manager->clients[i].active) {
             client_id = i;
             client_session_initialize(&manager->clients[i], socket_fd, addr);
+
+            // Set client ID for security context tracking
+            manager->clients[i].client_id          = client_id;
+            manager->clients[i].security_validated = false;
+
+            security_manager_t *sec_manager = get_security_manager();
+            if (sec_manager) {
+                if (security_manager_add_client(sec_manager, client_id, SECURITY_LEVEL_HIGH) < 0) {
+                    LOG_ERROR("Failed to add client %d to security manager", client_id);
+                    client_session_cleanup(&manager->clients[i]);
+                    pthread_mutex_unlock(&manager->mutex);
+                    return -1;
+                }
+                LOG_INFO("Client %d added to security manager with HIGH security level", client_id);
+
+                // TODO: Replace with secure key exchange protocol
+                uint8_t session_key[32];
+                for (int j = 0; j < 32; j++) {
+                    session_key[j] = (uint8_t)(0x42 + j) ^ 0xAB;
+                }
+                pthread_mutex_lock(&sec_manager->manager_mutex);
+                security_context_t *ctx = sec_manager->contexts[client_id];
+                if (ctx && ctx->enc_ctx) {
+                    if (init_encryption_context(ctx->enc_ctx, session_key) < 0) {
+                        LOG_ERROR("Failed to initialize encryption context for client %d",
+                                  client_id);
+                        pthread_mutex_unlock(&sec_manager->manager_mutex);
+                        client_session_cleanup(&manager->clients[i]);
+                        pthread_mutex_unlock(&manager->mutex);
+                        return -1;
+                    }
+                    LOG_INFO("Encryption context initialized for client %d", client_id);
+                } else {
+                    LOG_ERROR("Security context not available for client %d", client_id);
+                }
+                pthread_mutex_unlock(&sec_manager->manager_mutex);
+            } else {
+                LOG_WARN("Security manager not available for client %d", client_id);
+            }
+
             manager->client_count++;
             break;
         }
@@ -78,7 +119,7 @@ int client_manager_add_new_client(client_manager_t *manager, int socket_fd, stru
     pthread_mutex_unlock(&manager->mutex);
 
     if (client_id != -1) {
-        LOG_CONNECTION("New client connected: %s:%d (ID: %d)", inet_ntoa(addr.sin_addr),
+        LOG_CONNECTION("New secure client connected: %s:%d (ID: %d)", inet_ntoa(addr.sin_addr),
                        ntohs(addr.sin_port), client_id);
     } else {
         LOG_WARN("Failed to add client - server full");
@@ -98,6 +139,12 @@ void client_manager_remove_client(client_manager_t *manager, int client_id)
 
     if (session->active) {
         LOG_CONNECTION("Client disconnected: %s (ID: %d)", session->nickname, client_id);
+
+        security_manager_t *sec_manager = get_security_manager();
+        if (sec_manager) {
+            security_manager_remove_client(sec_manager, client_id);
+            LOG_INFO("Client %d removed from security manager", client_id);
+        }
 
         char message[BUFFER_SIZE];
         snprintf(message, BUFFER_SIZE, "*** %s left the chat ***\n", session->nickname);

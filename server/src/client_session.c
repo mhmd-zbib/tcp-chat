@@ -15,15 +15,18 @@ void client_session_initialize(client_session_t *session, int socket_fd, struct 
         LOG_ERROR("client_session_initialize: session is NULL");
         return;
     }
-    session->socket_fd       = socket_fd;
-    session->addr            = addr;
-    session->active          = 1;
-    session->handshake_state = HANDSHAKE_IDLE;
-    session->sequence_number = 0;
-    session->state           = CLIENT_STATE_CONNECTED;
+    session->socket_fd          = socket_fd;
+    session->addr               = addr;
+    session->active             = 1;
+    session->handshake_state    = HANDSHAKE_IDLE;
+    session->sequence_number    = 0;
+    session->state              = CLIENT_STATE_CONNECTED;
+    session->client_id          = -1; // Will be set by client manager
+    session->security_validated = false;
     memset(session->current_room_id, 0, sizeof(session->current_room_id));
     snprintf(session->nickname, MAX_NICKNAME_LEN, "User%d", socket_fd);
-    LOG_CONNECTION("client_session_initialize: Initialized session for socket %d", socket_fd);
+    LOG_CONNECTION("client_session_initialize: Initialized secure session for socket %d",
+                   socket_fd);
 }
 void client_session_cleanup(client_session_t *session)
 {
@@ -66,7 +69,9 @@ static int client_session_receive_message(client_session_t *session, char *buffe
     if (!session || !buffer || buffer_size == 0) {
         return -1;
     }
-    int bytes_received = recv(session->socket_fd, buffer, buffer_size - 1, 0);
+
+    uint8_t encrypted_buffer[BUFFER_SIZE * 2];
+    int bytes_received = recv(session->socket_fd, encrypted_buffer, sizeof(encrypted_buffer), 0);
     if (bytes_received <= 0) {
         if (bytes_received == 0) {
             LOG_CONNECTION("client_session_receive_message: Client '%s' disconnected",
@@ -77,8 +82,25 @@ static int client_session_receive_message(client_session_t *session, char *buffe
         }
         return -1;
     }
-    buffer[bytes_received] = '\0';
-    return bytes_received;
+
+    security_manager_t *sec_manager = get_security_manager();
+    if (!sec_manager) {
+        LOG_ERROR("Security manager not available for message decryption");
+        return -1;
+    }
+
+    size_t decrypted_len = buffer_size - 1;
+    if (server_decrypt_message(session->client_id, encrypted_buffer, (size_t)bytes_received,
+                               (uint8_t *)buffer, &decrypted_len) < 0) {
+        LOG_ERROR("Failed to decrypt message from client %d", session->client_id);
+        return -1;
+    }
+
+    buffer[decrypted_len] = '\0';
+    LOG_DEBUG("Decrypted message from client %d: %zu bytes encrypted -> %zu bytes plaintext",
+              session->client_id, (size_t)bytes_received, decrypted_len);
+
+    return (int)decrypted_len;
 }
 void *client_session_handler_thread(void *arg)
 {

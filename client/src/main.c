@@ -77,9 +77,79 @@ void *message_receiver_thread(void *arg)
     pthread_exit(NULL);
 }
 
+void main_show_room_selection_menu(void)
+{
+    // Server already sends the room selection menu
+    // Just show a simple prompt
+    printf("Enter your choice: ");
+    fflush(stdout);
+}
+
+int main_handle_room_selection(void)
+{
+    char input[BUFFER_SIZE];
+    int  room_selected = 0;
+
+    main_show_room_selection_menu();
+
+    while (!room_selected && g_client->connected) {
+        if (fgets(input, BUFFER_SIZE, stdin) == NULL) {
+            break;
+        }
+
+        size_t len = strlen(input);
+        if (len > 0 && input[len - 1] == '\n') {
+            input[len - 1] = '\0';
+        }
+
+        // Skip empty input
+        if (strlen(input) == 0) {
+            printf("Enter your choice: ");
+            fflush(stdout);
+            continue;
+        }
+
+        // Handle quit command
+        if (strcmp(input, "/quit") == 0) {
+            LOG_INFO("Quitting chat...");
+            return -1;
+        }
+
+        if (client_send_message(g_client, input) < 0) {
+            LOG_ERROR("Failed to send command");
+            return -1;
+        }
+
+        if (strncmp(input, "/create ", 8) == 0 || strncmp(input, "/join ", 6) == 0) {
+            printf("Processing command, please wait...\n");
+            usleep(1000000); // 1 second to allow server response
+
+            // The server automatically adds the client to the room upon creation/join
+            // Server sends success messages that include room ID information
+            printf("\n✓ Command sent! Check the server response above.\n");
+            printf("If successful, you should now be in the room!\n\n");
+            printf("Type your messages to chat, or use commands:\n");
+            printf("  /leave - Leave current room\n");
+            printf("  /users - Show users in room\n");
+            printf("  /quit  - Exit chat\n\n");
+            room_selected = 1;
+        } else if (strncmp(input, "/rooms", 6) == 0 || strncmp(input, "/help", 5) == 0) {
+            // These commands don't change room state, continue waiting for response
+            usleep(200000); // 200ms for server response
+            printf("\nEnter your choice: ");
+            fflush(stdout);
+        } else {
+            printf("Invalid command. Use /create <name>, /join <id>, /rooms, /help, or /quit\n");
+            printf("Enter your choice: ");
+            fflush(stdout);
+        }
+    }
+
+    return room_selected ? 0 : -1;
+}
+
 int main(int argc, char *argv[])
 {
-    // Initialize logger first
     logger_init("TCP-CHAT-CLIENT", LOG_LEVEL_DEBUG);
 
     signal(SIGINT, signal_handler);
@@ -109,10 +179,9 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    LOG_INFO("\nConnection established! Press Ctrl+C to disconnect.");
-    LOG_INFO("Type your message and press Enter to send. Type '/quit' to exit.");
+    LOG_INFO("\nConnection established! Welcome to TCP Chat!");
+    LOG_INFO("You need to create or join a room before chatting.");
 
-    // Create a thread for receiving messages
     pthread_t receive_thread;
     if (pthread_create(&receive_thread, NULL, message_receiver_thread, g_client) != 0) {
         LOG_ERROR("Failed to create receiver thread: %s", strerror(errno));
@@ -121,15 +190,26 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    // Main loop for sending messages
+    // Wait a moment for welcome messages from server
+    usleep(200000); // 200ms
+
+    // Handle room selection first
+    if (main_handle_room_selection() < 0) {
+        LOG_INFO("Room selection cancelled or failed");
+        g_client->connected = 0;
+        pthread_join(receive_thread, NULL);
+        client_destroy(g_client);
+        logger_cleanup();
+        return 0;
+    }
+
+    // Main chat loop after room selection
     char input[BUFFER_SIZE];
     while (1) {
-        // Read a line from stdin
         if (fgets(input, BUFFER_SIZE, stdin) == NULL) {
             break;
         }
 
-        // Remove trailing newline
         size_t len = strlen(input);
         if (len > 0 && input[len - 1] == '\n') {
             input[len - 1] = '\0';
@@ -146,7 +226,6 @@ int main(int argc, char *argv[])
             continue;
         }
 
-        // Send the message
         if (!g_client->connected) {
             LOG_ERROR("Cannot send message: Not connected to server");
             break;

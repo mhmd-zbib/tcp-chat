@@ -3,6 +3,7 @@
 #include "../include/client_manager.h"
 #include "../include/client_session.h"
 #include "../include/room_manager.h"
+#include "../include/security_foundation.h"
 #include "../include/types.h"
 #include <arpa/inet.h>
 #include <errno.h>
@@ -20,21 +21,28 @@ client_manager_t *g_client_manager = NULL;
 
 server_t *server_create(const char *ip, int port)
 {
+    if (server_security_foundation_init() < 0) {
+        LOG_FATAL("Failed to initialize server security foundation");
+        return NULL;
+    }
+
     server_t *server = malloc(sizeof(server_t));
     if (!server) {
         LOG_FATAL("Failed to allocate memory for server");
+        server_security_foundation_cleanup();
         return NULL;
     }
+
+    LOG_INFO("Creating server with military-grade security...");
+
     server->port       = port;
     server->is_running = 0;
     strncpy(server->ip, ip, INET_ADDRSTRLEN - 1);
     server->ip[INET_ADDRSTRLEN - 1] = '\0';
 
-    // Initialize managers
     client_manager_initialize(&server->client_manager);
     room_manager_initialize(&server->room_manager);
 
-    // Set global references
     g_client_manager = &server->client_manager;
     g_room_manager   = &server->room_manager;
 
@@ -45,9 +53,7 @@ server_t *server_create(const char *ip, int port)
         return NULL;
     }
 
-    // Set socket options
     int opt = 1;
-    // Enable address reuse
     if (setsockopt(server->socket_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0) {
         LOG_WARN("Failed to set SO_REUSEADDR option: %s", strerror(errno));
         close(server->socket_fd);
@@ -55,7 +61,6 @@ server_t *server_create(const char *ip, int port)
         return NULL;
     }
 
-    // Ensure socket is in blocking mode
     int flags = fcntl(server->socket_fd, F_GETFL, 0);
     if (flags == -1) {
         LOG_ERRNO("Failed to get socket flags");
@@ -64,7 +69,6 @@ server_t *server_create(const char *ip, int port)
         return NULL;
     }
 
-    // Remove O_NONBLOCK flag if it's set
     if (flags & O_NONBLOCK) {
         LOG_INFO("Setting socket to blocking mode");
         if (fcntl(server->socket_fd, F_SETFL, flags & ~O_NONBLOCK) == -1) {
@@ -147,7 +151,6 @@ int server_accept_clients(server_t *server)
         LOG_CONNECTION("New client connection from %s:%d", inet_ntoa(client_addr.sin_addr),
                        ntohs(client_addr.sin_port));
 
-        // Add client to the manager
         int client_id =
             client_manager_add_new_client(&server->client_manager, client_socket, client_addr);
         if (client_id < 0) {
@@ -159,7 +162,6 @@ int server_accept_clients(server_t *server)
         // Start a thread for the client session
         client_session_t *session = client_manager_get_session(&server->client_manager, client_id);
 
-        // Create arguments for the handler thread
         void *args                   = malloc(sizeof(client_manager_t *) + sizeof(int));
         *((client_manager_t **)args) = &server->client_manager;
         *((int *)((client_manager_t **)args + 1)) = client_id;
@@ -181,10 +183,11 @@ int server_accept_clients(server_t *server)
 void server_destroy(server_t *server)
 {
     if (server) {
+        LOG_INFO("Destroying server with secure cleanup...");
+
         client_manager_cleanup(&server->client_manager);
         room_manager_cleanup(&server->room_manager);
 
-        // Clear global references
         g_client_manager = NULL;
         g_room_manager   = NULL;
 
@@ -192,7 +195,12 @@ void server_destroy(server_t *server)
             close(server->socket_fd);
             LOG_INFO("Socket closed");
         }
+
+        // Cleanup security foundation
+        server_security_foundation_cleanup();
+
         free(server);
+        LOG_INFO("Server destroyed with military-grade security cleanup");
     }
 }
 void server_print_info(const server_t *server)

@@ -132,7 +132,7 @@ void chat_protocol_announce_user_joined(client_manager_t *manager, client_sessio
         return;
     }
     char announcement[BUFFER_SIZE];
-    snprintf(announcement, BUFFER_SIZE, "*** %s joined the chat ***\n", session->nickname);
+    snprintf(announcement, BUFFER_SIZE, "%s connected\n", session->nickname);
     LOG_INFO("chat_protocol_announce_user_joined: %s", announcement);
     client_manager_broadcast_message(manager, announcement, client_id);
     client_manager_broadcast_user_list(manager);

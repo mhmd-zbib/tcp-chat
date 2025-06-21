@@ -21,5 +21,7 @@ client_t *client_create(const char *server_ip, int server_port, const char *nick
 int       client_connect_to_server(client_t *client);
 void      client_disconnect(client_t *client);
 void      client_destroy(client_t *client);
+int       client_send_message(client_t *client, const char *message);
+int       client_receive_message(client_t *client, char *buffer, size_t buffer_size);
 
 #endif

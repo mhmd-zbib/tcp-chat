@@ -1,6 +1,6 @@
 #include "../include/client.h"
-#include "../include/handshake_protocol.h"
 #include "../../utils/include/logger.h"
+#include "../include/handshake_protocol.h"
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -40,7 +40,7 @@ client_t *client_create(const char *server_ip, int server_port, const char *nick
     }
 
     LOG_INFO("Client created for server %s:%d with nickname '%s'", server_ip, server_port,
-           nickname);
+             nickname);
 
     return client;
 }
@@ -65,8 +65,7 @@ int client_connect_to_server(client_t *client)
 
     int opt = 1;
     if (setsockopt(client->socket_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0) {
-        LOG_WARN("client_connect_to_server: Failed to set SO_REUSEADDR: %s",
-                strerror(errno));
+        LOG_WARN("client_connect_to_server: Failed to set SO_REUSEADDR: %s", strerror(errno));
     }
 
     LOG_CONNECTION("Connecting to server %s:%d...", client->server_ip, client->server_port);
@@ -102,8 +101,16 @@ void client_disconnect(client_t *client)
         return;
     }
 
-    if (client->socket_fd >= 0) {
+    if (client->socket_fd >= 0 && client->connected) {
         LOG_CONNECTION("Disconnecting from server...");
+
+        // Send a quit message to the server if still connected
+        const char *quit_msg = "/quit";
+        send(client->socket_fd, quit_msg, strlen(quit_msg), MSG_NOSIGNAL);
+
+        // Give the server a moment to process the quit message
+        usleep(100000); // 100ms
+
         close(client->socket_fd);
         client->socket_fd = -1;
     }
@@ -121,4 +128,52 @@ void client_destroy(client_t *client)
     client_disconnect(client);
     free(client);
     LOG_INFO("Client resources released");
+}
+
+int client_send_message(client_t *client, const char *message)
+{
+    if (!client || !message || !client->connected) {
+        LOG_ERROR("client_send_message: Invalid parameters or not connected");
+        return -1;
+    }
+
+    size_t  len        = strlen(message);
+    ssize_t bytes_sent = send(client->socket_fd, message, len, 0);
+    if (bytes_sent < 0) {
+        LOG_ERRNO("client_send_message: Failed to send message");
+        return -1;
+    } else if ((size_t)bytes_sent < len) {
+        LOG_WARN("client_send_message: Partial message sent: %zd/%zu bytes", bytes_sent, len);
+        return -1;
+    }
+
+    LOG_DEBUG("Sent message: %s", message);
+    return 0;
+}
+
+int client_receive_message(client_t *client, char *buffer, size_t buffer_size)
+{
+    if (!client || !buffer || buffer_size == 0 || !client->connected) {
+        LOG_ERROR("client_receive_message: Invalid parameters or not connected");
+        return -1;
+    }
+
+    ssize_t bytes_received = recv(client->socket_fd, buffer, buffer_size - 1, 0);
+    if (bytes_received <= 0) {
+        if (bytes_received == 0) {
+            LOG_CONNECTION("Server disconnected");
+            client->connected = 0;
+        } else {
+            // Check if this is a timeout (which is expected)
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                return 0; // Timeout, not an error
+            } else {
+                LOG_ERRNO("client_receive_message: Error receiving data");
+            }
+        }
+        return -1;
+    }
+
+    buffer[bytes_received] = '\0';
+    return (int)bytes_received;
 }

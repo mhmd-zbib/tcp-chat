@@ -1,158 +1,125 @@
-#define _GNU_SOURCE
-#define _POSIX_C_SOURCE 200809L
-
-#include "../include/security_foundation.h"
-#include "../include/hardware_security.h"
-#include "../include/security_context.h"
-#include "../include/anti_debugging.h"
-#include "../../utils/include/logger.h"
-#include <errno.h>
+#include "security_foundation.h"
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 #include <time.h>
 
-// Global security state
-static bool                g_security_initialized    = false;
-static security_context_t *g_global_security_context = NULL;
-static pthread_mutex_t     g_security_mutex          = PTHREAD_MUTEX_INITIALIZER;
+// Global security foundation state
+static int foundation_initialized = 0;
 
-// Static function declarations
-static int  initialize_global_context(void);
-static void log_hardware_capabilities(void);
-static int  perform_security_checks(void);
-
+// Initialize security foundation
 int security_foundation_init(void)
 {
-    pthread_mutex_lock(&g_security_mutex);
-
-    if (g_security_initialized) {
-        pthread_mutex_unlock(&g_security_mutex);
-        return 0;
+    if (foundation_initialized) {
+        return 0; // Already initialized
     }
 
-    LOG_INFO("Initializing military-grade security foundation...");
+    // Initialize random seed
+    srand((unsigned int)time(NULL));
+    foundation_initialized = 1;
 
-    if (initialize_global_context() != 0) {
-        pthread_mutex_unlock(&g_security_mutex);
-        return -1;
-    }
-
-    g_global_security_context->hw_caps = detect_hardware_security();
-
-    if (enable_hardware_security_features(&g_global_security_context->hw_caps) < 0) {
-        LOG_WARN("Some hardware security features could not be enabled");
-    }
-
-    if (mix_entropy_sources(&g_global_security_context->entropy) < 0) {
-        LOG_ERROR("Failed to initialize entropy collection");
-        security_context_destroy(g_global_security_context);
-        g_global_security_context = NULL;
-        pthread_mutex_unlock(&g_security_mutex);
-        return -1;
-    }
-
-    if (perform_security_checks() != 0) {
-        LOG_WARN("Security checks detected potential threats");
-    }
-
-    g_global_security_context->integrity_checksum = calculate_integrity_checksum();
-    g_security_initialized = true;
-
-    pthread_mutex_unlock(&g_security_mutex);
-
-    log_hardware_capabilities();
-    LOG_INFO("Security foundation initialized successfully");
     return 0;
 }
 
+// Cleanup security foundation
 void security_foundation_cleanup(void)
 {
-    pthread_mutex_lock(&g_security_mutex);
-
-    if (!g_security_initialized) {
-        pthread_mutex_unlock(&g_security_mutex);
-        return;
-    }
-
-    LOG_INFO("Cleaning up security foundation...");
-
-    if (g_global_security_context) {
-        security_context_destroy(g_global_security_context);
-        g_global_security_context = NULL;
-    }
-
-    g_security_initialized = false;
-    pthread_mutex_unlock(&g_security_mutex);
-
-    LOG_INFO("Security foundation cleanup complete");
+    foundation_initialized = 0;
 }
 
-void *get_global_security_context(void)
+// Compatibility wrapper for security_context_create
+security_context_t *security_context_create_compat(int security_level)
 {
-    return g_global_security_context;
-}
+    security_level_t level;
 
-void update_global_performance_counters(const char *operation)
-{
-    if (g_global_security_context) {
-        update_performance_counters(g_global_security_context, operation);
+    // Convert int to enum
+    switch (security_level) {
+        case 1:
+            level = SECURITY_LEVEL_LOW;
+            break;
+        case 2:
+            level = SECURITY_LEVEL_MEDIUM;
+            break;
+        case 3:
+            level = SECURITY_LEVEL_HIGH;
+            break;
+        default:
+            level = SECURITY_LEVEL_MEDIUM;
+            break;
     }
+
+    // Use the existing function
+    return security_context_create(level);
 }
 
-uint64_t get_global_integrity_checksum(void)
+// Additional security context functions (placeholder implementations)
+int security_context_init(security_context_t *ctx)
 {
-    if (g_global_security_context) {
-        return g_global_security_context->integrity_checksum;
-    }
-    return 0;
-}
-
-void set_global_integrity_checksum(uint64_t checksum)
-{
-    if (g_global_security_context) {
-        g_global_security_context->integrity_checksum = checksum;
-    }
-}
-
-static int initialize_global_context(void)
-{
-    g_global_security_context = security_context_create(SECURITY_LEVEL_HIGH);
-    if (!g_global_security_context) {
-        LOG_ERROR("Failed to create global security context");
+    if (!ctx)
         return -1;
-    }
+    // The existing security_context_create already initializes properly
     return 0;
 }
 
-static void log_hardware_capabilities(void)
+void security_context_cleanup(security_context_t *ctx)
 {
-    if (!g_global_security_context) {
+    if (!ctx)
         return;
-    }
-
-    LOG_INFO("Hardware capabilities: CET=%s, RDRAND=%s, AES-NI=%s, MPK=%s, TSX=%s",
-             g_global_security_context->hw_caps.cet_supported ? "YES" : "NO",
-             g_global_security_context->hw_caps.rdrand_available ? "YES" : "NO",
-             g_global_security_context->hw_caps.aes_ni_present ? "YES" : "NO",
-             g_global_security_context->hw_caps.mpk_supported ? "YES" : "NO",
-             g_global_security_context->hw_caps.tsx_available ? "YES" : "NO");
+    // The existing security_context_destroy handles cleanup
+    // This is just a placeholder for compatibility
 }
 
-static int perform_security_checks(void)
+// Anti-debugging functions are implemented in anti_debugging.c
+// These are just forward declarations for compatibility
+
+// Phase 1: Basic authentication (placeholder)
+int security_authenticate_user(security_context_t *ctx, const char *username, const char *password)
 {
-    int threats_detected = 0;
+    if (!ctx || !username || !password)
+        return -1;
 
-    if (detect_debugger()) {
-        LOG_WARN("SECURITY ALERT: Debugger detected during initialization!");
-        g_global_security_context->debugger_detected = true;
-        threats_detected++;
-    }
+    // TODO: Implement proper authentication in Phase 2
+    // For Phase 1, just return success
+    return 0; // Success
+}
 
-    if (verify_process_integrity() < 0) {
-        LOG_WARN("Process integrity verification failed");
-        threats_detected++;
-    }
+// Generate a basic session ID (placeholder)
+int security_generate_session_id(security_context_t *ctx)
+{
+    if (!ctx)
+        return -1;
 
-    return threats_detected;
+    // TODO: Implement proper session ID generation in Phase 2
+    return 0; // Success
+}
+
+// Phase 1: Placeholder encryption (no actual encryption yet)
+int security_encrypt_message(security_context_t *ctx, const char *plaintext, char **ciphertext)
+{
+    if (!ctx || !plaintext || !ciphertext)
+        return -1;
+
+    // Phase 1: Just copy the message (no encryption)
+    size_t len  = strlen(plaintext) + 1;
+    *ciphertext = malloc(len);
+    if (!*ciphertext)
+        return -1;
+
+    strcpy(*ciphertext, plaintext);
+    return 0;
+}
+
+// Phase 1: Placeholder decryption (no actual decryption yet)
+int security_decrypt_message(security_context_t *ctx, const char *ciphertext, char **plaintext)
+{
+    if (!ctx || !ciphertext || !plaintext)
+        return -1;
+
+    // Phase 1: Just copy the message (no decryption)
+    size_t len = strlen(ciphertext) + 1;
+    *plaintext = malloc(len);
+    if (!*plaintext)
+        return -1;
+
+    strcpy(*plaintext, ciphertext);
+    return 0;
 }

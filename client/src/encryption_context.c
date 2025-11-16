@@ -3,13 +3,13 @@
 
 #include "../include/encryption_context.h"
 #include "../../utils/include/logger.h"
+#include "../include/global_security.h"
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-// External function to update performance counters
-extern void update_global_performance_counters(const char *operation);
+// External function declarations are now in global_security.h
 
 // Static function declarations
 static void perform_xor_encryption(encryption_context_t *enc_ctx, const uint8_t *plaintext,

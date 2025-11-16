@@ -1,5 +1,6 @@
 #include "../include/cli_args.h"
 #include "../include/client.h"
+#include "../include/e2e_encryption.h"
 #include "../include/types.h"
 #include "logger.h"
 #include <errno.h>
@@ -43,7 +44,21 @@ void *message_receiver_thread(void *arg)
             // Null-terminate the buffer
             buffer[bytes_received] = '\0';
 
-            // Print received message
+            // Check for special E2E messages
+            if (strncmp(buffer, "/keyexchange:", 13) == 0) {
+                // Handle key exchange
+                e2e_key_exchange_packet_t key_packet;
+                if (client_parse_key_exchange(buffer + 13, &key_packet) == 0) {
+                    client_handle_key_exchange(client, &key_packet);
+                }
+                continue; // Don't display key exchange messages
+            } else if (strncmp(buffer, "/e2emsg:", 8) == 0) {
+                // Handle E2E encrypted message
+                client_handle_e2e_message(client, buffer + 8);
+                continue; // E2E messages are displayed by the handler
+            }
+
+            // Print regular server messages
             printf("%s", buffer);
 
             // If the message doesn't end with newline, add one for proper formatting
@@ -219,6 +234,69 @@ int main(int argc, char *argv[])
         if (strcmp(input, "/quit") == 0) {
             LOG_INFO("Quitting chat...");
             break;
+        }
+
+        // Check for E2E message command: /e2e <nickname> <message>
+        if (strncmp(input, "/e2e ", 5) == 0) {
+            char *space_pos = strchr(input + 5, ' ');
+            if (space_pos) {
+                *space_pos            = '\0'; // Split recipient nickname and message
+                const char *recipient = input + 5;
+                const char *message   = space_pos + 1;
+
+                if (strlen(message) > 0) {
+                    if (client_send_e2e_message(g_client, message, recipient) < 0) {
+                        printf("❌ Failed to send E2E message to %s\n", recipient);
+                    } else {
+                        printf("🔒 E2E message sent to %s\n", recipient);
+                    }
+                } else {
+                    printf("Usage: /e2e <nickname> <message>\n");
+                }
+            } else {
+                printf("Usage: /e2e <nickname> <message>\n");
+            }
+            continue;
+        }
+
+        // Check for help command to show E2E commands
+        if (strcmp(input, "/help") == 0 || strcmp(input, "/e2ehelp") == 0) {
+            printf("\n=== Available Commands ===\n");
+            printf("🔒 E2E Encryption Commands:\n");
+            printf("  /e2e <nickname> <message> - Send encrypted message to specific user\n");
+            printf("  /peers                    - Show available E2E peers\n");
+            printf("  /keyrefresh              - Re-broadcast your public key\n");
+            printf("\n📢 Regular Commands:\n");
+            printf("  /help                    - Show this help\n");
+            printf("  /quit                    - Exit chat\n");
+            printf("  (type normal messages for room chat)\n\n");
+            continue;
+        }
+
+        // Check for peers list command
+        if (strcmp(input, "/peers") == 0) {
+            printf("\n🔑 Available E2E Peers:\n");
+            if (g_client->e2e_ctx->num_peers == 0) {
+                printf("  No peers available for E2E messaging\n");
+            } else {
+                for (int i = 0; i < g_client->e2e_ctx->num_peers; i++) {
+                    if (g_client->e2e_ctx->peer_keys[i].active) {
+                        printf("  🔐 %s\n", g_client->e2e_ctx->peer_keys[i].nickname);
+                    }
+                }
+            }
+            printf("Use: /e2e <nickname> <message> to send encrypted messages\n\n");
+            continue;
+        }
+
+        // Check for key refresh command
+        if (strcmp(input, "/keyrefresh") == 0) {
+            if (client_broadcast_public_key(g_client) < 0) {
+                printf("❌ Failed to re-broadcast public key\n");
+            } else {
+                printf("🔑 Public key re-broadcasted\n");
+            }
+            continue;
         }
 
         // Skip empty messages

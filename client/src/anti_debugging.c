@@ -3,6 +3,7 @@
 
 #include "../include/anti_debugging.h"
 #include "../../utils/include/logger.h"
+#include "../include/global_security.h"
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -12,9 +13,7 @@
 #include <time.h>
 #include <unistd.h>
 
-// External function to get global integrity checksum
-extern uint64_t get_global_integrity_checksum(void);
-extern void     set_global_integrity_checksum(uint64_t checksum);
+// External function declarations are now in global_security.h
 
 // Static function declarations
 static int check_tracer_pid(void);

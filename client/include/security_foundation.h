@@ -1,45 +1,36 @@
 #ifndef SECURITY_FOUNDATION_H
 #define SECURITY_FOUNDATION_H
 
-#include "types.h"
-#include "secure_memory.h"
-#include "hardware_security.h"
-#include "encryption_context.h"
 #include "security_context.h"
-#include "anti_debugging.h"
-#include <pthread.h>
-#include <stdbool.h>
+#include "encryption_context.h"
+#include "secure_memory.h"
 #include <stdint.h>
+#include <stdlib.h>
 
-// Security manager for server
-typedef struct {
-    security_context_t *contexts[MAX_CLIENTS];
-    uint32_t            num_contexts;
-    pthread_mutex_t     manager_mutex;
+// Constants for backward compatibility with integer usage
+#define SECURITY_LEVEL_LOW_INT    1
+#define SECURITY_LEVEL_MEDIUM_INT 2  
+#define SECURITY_LEVEL_HIGH_INT   3
 
-    // Global security policies
-    security_level_t min_security_level;
-    bool             enforce_hardware_security;
-    uint32_t         key_rotation_interval;
+// Function declarations for security foundation (using existing types)
+int                 security_foundation_init(void);
+void                security_foundation_cleanup(void);
 
-    // Threat detection
-    uint32_t failed_auth_attempts;
-    uint64_t last_attack_time;
-    bool     emergency_mode;
-} security_manager_t;
+// Wrapper functions for compatibility with int parameter
+security_context_t *security_context_create_compat(int security_level);
 
-// Main foundation functions
-int  security_foundation_init(void);
-void security_foundation_cleanup(void);
+// Additional security functions not in existing headers
+int security_context_init(security_context_t *ctx);
+void security_context_cleanup(security_context_t *ctx);
 
-// Global context access
-void    *get_global_security_context(void);
-void     update_global_performance_counters(const char *operation);
-uint64_t get_global_integrity_checksum(void);
-void     set_global_integrity_checksum(uint64_t checksum);
+// Anti-debugging and integrity functions
+int detect_debugger(void);
+int verify_process_integrity(void);
 
-// Constants
-#define MAX_ENTROPY_SOURCES 8
-#define MIN_ENTROPY_QUALITY 7.9
+// Phase 1: Basic security operations (placeholders)
+int security_authenticate_user(security_context_t *ctx, const char *username, const char *password);
+int security_generate_session_id(security_context_t *ctx);
+int security_encrypt_message(security_context_t *ctx, const char *plaintext, char **ciphertext);
+int security_decrypt_message(security_context_t *ctx, const char *ciphertext, char **plaintext);
 
 #endif // SECURITY_FOUNDATION_H

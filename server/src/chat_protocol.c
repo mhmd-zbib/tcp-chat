@@ -63,6 +63,36 @@ static int chat_protocol_handle_command(client_manager_t *manager, client_sessio
     } else if (strncmp(command, "/quit", 5) == 0) {
         LOG_CLIENT("Client '%s' requested to quit", session->nickname);
         return -1;
+    } else if (strncmp(command, "/keyexchange:", 13) == 0) {
+        // Handle E2E key exchange - relay to all other clients
+        LOG_INFO("Relaying key exchange from client '%s'", session->nickname);
+        char relay_msg[BUFFER_SIZE];
+        snprintf(relay_msg, sizeof(relay_msg), "%s", command);
+
+        // Broadcast to all clients in the room (or globally for key exchange)
+        if (session->state == CLIENT_STATE_IN_ROOM && strlen(session->current_room_id) > 0) {
+            room_manager_broadcast_to_room(g_room_manager, session->current_room_id, relay_msg,
+                                           client_id);
+        } else {
+            // If not in room, broadcast globally for key exchange
+            client_manager_broadcast_message(manager, relay_msg, client_id);
+        }
+        return 0;
+    } else if (strncmp(command, "/e2emsg:", 8) == 0) {
+        // Handle E2E encrypted message - relay without decrypting
+        LOG_INFO("Relaying E2E encrypted message from client '%s'", session->nickname);
+        char relay_msg[BUFFER_SIZE];
+        snprintf(relay_msg, sizeof(relay_msg), "%s", command);
+
+        // Broadcast to all clients in the room - let them decrypt if they can
+        if (session->state == CLIENT_STATE_IN_ROOM && strlen(session->current_room_id) > 0) {
+            room_manager_broadcast_to_room(g_room_manager, session->current_room_id, relay_msg,
+                                           client_id);
+        } else {
+            const char *error_msg = "You must be in a room to send E2E messages.\n";
+            chat_protocol_send_message_to_client(session, error_msg);
+        }
+        return 0;
     } else {
         const char *unknown_cmd = "Unknown command. Type /help for available commands.\n";
         chat_protocol_send_message_to_client(session, unknown_cmd);

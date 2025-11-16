@@ -255,10 +255,6 @@ int server_decrypt_message(int client_id, const uint8_t *ciphertext, size_t ciph
     return result;
 }
 
-// Copy all the base security functions from client implementation
-// (For brevity, I'm including just the essential ones here)
-
-// Hardware detection functions
 hw_security_caps_t detect_hardware_security(void)
 {
     hw_security_caps_t caps = {0};

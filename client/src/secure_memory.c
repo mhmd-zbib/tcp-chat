@@ -3,6 +3,7 @@
 
 #include "../include/secure_memory.h"
 #include "../../utils/include/logger.h"
+#include "../include/global_security.h"
 #include "../include/hardware_security.h"
 #include <errno.h>
 #include <stdio.h>
@@ -11,8 +12,7 @@
 #include <sys/mman.h>
 #include <time.h>
 
-// External global context - will be properly handled in main file
-extern void *get_global_security_context(void);
+// External function declarations are now in global_security.h
 
 // Static function declarations
 static void initialize_memory_content(void *user_ptr, size_t size, security_level_t level);

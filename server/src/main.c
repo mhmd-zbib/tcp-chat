@@ -9,7 +9,6 @@
 #include <unistd.h>
 int main(int argc, char *argv[])
 {
-    // Initialize logger first
     logger_init("TCP-CHAT-SERVER", LOG_LEVEL_DEBUG);
 
     cli_args_t args = parse_args(argc, argv);

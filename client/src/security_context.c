@@ -4,15 +4,14 @@
 #include "../include/security_context.h"
 #include "../../utils/include/logger.h"
 #include "../include/anti_debugging.h"
+#include "../include/global_security.h"
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
 
-// External functions from other modules
-extern void *get_global_security_context(void);
-extern int   init_entropy_pool(entropy_pool_t *pool);
+// External function declarations are now in global_security.h
 
 // Static function declarations
 static int  initialize_context_mutexes(security_context_t *ctx);
